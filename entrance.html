@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>入口 | 緑地環境情報学研究室</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;500;700&family=Shippori+Mincho:wght@400;700&family=Zen+Old+Mincho:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d110f;
+    --bg2: #151a17;
+    --accent: #3e604e;
+    --accent-light: #5a8a6e;
+    --text: #e2e8f0;
+    --text-dim: #8a9a92;
+    --gold: #b09a6a;
+    --gold-light: #d4c49a;
+    --gold-dim: rgba(176, 154, 106, 0.15);
+  }
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body, html {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Zen Old Mincho', 'Shippori Mincho', serif;
+    overflow: hidden;
+    cursor: default;
+  }
+
+  /* === LOADING CURTAIN === */
+  .curtain {
+    position: fixed; inset: 0; z-index: 1000;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+                visibility 0.8s;
+  }
+  .curtain.open { opacity: 0; visibility: hidden; }
+
+  /* Tree-ring ripple loader */
+  .curtain-rings {
+    position: relative;
+    width: 120px; height: 120px;
+  }
+  .curtain-rings .ring {
+    position: absolute;
+    inset: 0;
+    border: 1px solid var(--gold);
+    border-radius: 50%;
+    opacity: 0;
+    animation: rippleOut 2.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  .curtain-rings .ring:nth-child(1) { animation-delay: 0s; }
+  .curtain-rings .ring:nth-child(2) { animation-delay: 0.25s; }
+  .curtain-rings .ring:nth-child(3) { animation-delay: 0.5s; }
+  .curtain-rings .ring:nth-child(4) { animation-delay: 0.75s; }
+  .curtain-rings .ring:nth-child(5) { animation-delay: 1.0s; }
+  .curtain-rings .dot {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 4px; height: 4px;
+    margin: -2px 0 0 -2px;
+    background: var(--gold);
+    border-radius: 50%;
+    opacity: 0;
+    animation: dotPulse 2s ease 0.1s forwards;
+  }
+  @keyframes rippleOut {
+    0% { transform: scale(0.1); opacity: 0.7; }
+    70% { opacity: 0.3; }
+    100% { transform: scale(1.8); opacity: 0; }
+  }
+  @keyframes dotPulse {
+    0% { opacity: 0; transform: scale(0); }
+    30% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.5); }
+  }
+
+  /* === BACKGROUND LAYERS === */
+  .bg-grain {
+    position: fixed; inset: 0; z-index: 3;
+    opacity: 0.04;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+    background-size: 256px;
+  }
+
+  .bg-radial {
+    position: fixed; inset: 0; z-index: 2;
+    background: radial-gradient(ellipse 60% 50% at 50% 40%, rgba(62,96,78,0.12) 0%, transparent 70%),
+                radial-gradient(ellipse 40% 60% at 80% 70%, rgba(176,154,106,0.06) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  canvas#network { position: fixed; top: 0; left: 0; z-index: 4; pointer-events: none; }
+  canvas#rings { position: fixed; top: 0; left: 0; z-index: 5; pointer-events: none; }
+
+  /* === VERTICAL SIDE DECORATION === */
+  .side-deco {
+    position: fixed; z-index: 10; pointer-events: none;
+    writing-mode: vertical-rl;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 10px;
+    letter-spacing: 0.5em;
+    color: var(--text-dim);
+    opacity: 0;
+  }
+  .side-deco.left {
+    left: 24px; top: 50%; transform: translateY(-50%);
+    animation: sideReveal 1s ease 3.5s forwards;
+  }
+  .side-deco.right {
+    right: 24px; top: 50%; transform: translateY(-50%);
+    animation: sideReveal 1s ease 3.7s forwards;
+  }
+  @keyframes sideReveal {
+    from { opacity: 0; }
+    to { opacity: 0.4; }
+  }
+
+  /* === CORNER MARKS === */
+  .corner-mark {
+    position: fixed; z-index: 10;
+    width: 40px; height: 40px;
+    pointer-events: none;
+    opacity: 0;
+    animation: cornerIn 0.6s ease 3.2s forwards;
+  }
+  .corner-mark::before, .corner-mark::after {
+    content: ''; position: absolute;
+    background: var(--gold);
+    opacity: 0.25;
+  }
+  .corner-mark.tl { top: 20px; left: 20px; }
+  .corner-mark.tl::before { top: 0; left: 0; width: 1px; height: 100%; }
+  .corner-mark.tl::after { top: 0; left: 0; width: 100%; height: 1px; }
+  .corner-mark.tr { top: 20px; right: 20px; }
+  .corner-mark.tr::before { top: 0; right: 0; width: 1px; height: 100%; }
+  .corner-mark.tr::after { top: 0; right: 0; width: 100%; height: 1px; }
+  .corner-mark.bl { bottom: 20px; left: 20px; }
+  .corner-mark.bl::before { bottom: 0; left: 0; width: 1px; height: 100%; }
+  .corner-mark.bl::after { bottom: 0; left: 0; width: 100%; height: 1px; }
+  .corner-mark.br { bottom: 20px; right: 20px; }
+  .corner-mark.br::before { bottom: 0; right: 0; width: 1px; height: 100%; }
+  .corner-mark.br::after { bottom: 0; right: 0; width: 100%; height: 1px; }
+  @keyframes cornerIn {
+    from { opacity: 0; transform: scale(0.5); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  /* === MAIN CONTENT === */
+  .content {
+    position: relative; z-index: 20;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    height: 100vh; width: 100%;
+    text-align: center;
+    padding: 0 20px;
+  }
+
+  /* Affiliation line */
+  .lab-affiliation {
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: clamp(11px, 1.5vw, 16px);
+    font-weight: 300;
+    letter-spacing: 0.25em;
+    color: var(--gold);
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  .lab-affiliation .char {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(100%);
+    animation: charUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  /* Lab name */
+  .main-lab-name {
+    font-family: 'Zen Old Mincho', serif;
+    font-size: clamp(2.2rem, 7vw, 4.5rem);
+    letter-spacing: 0.25em;
+    font-weight: 700;
+    line-height: 1.3;
+    position: relative;
+    padding-bottom: 28px;
+    margin-bottom: 36px;
+  }
+  .main-lab-name .char {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(40px) rotateX(40deg);
+    animation: charReveal 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  .main-lab-name::after {
+    content: '';
+    position: absolute; bottom: 0; left: 50%;
+    width: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    animation: lineExpand 1s ease 3.6s forwards;
+  }
+  @keyframes lineExpand {
+    to { width: 80%; left: 10%; }
+  }
+
+  /* Tagline */
+  .main-copy {
+    font-size: clamp(1rem, 2.8vw, 1.6rem);
+    letter-spacing: 0.5em;
+    font-weight: 400;
+    color: var(--text);
+    position: relative;
+  }
+  .main-copy .word {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(20px);
+    filter: blur(4px);
+    animation: wordReveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  /* Subtitle English */
+  .sub-en {
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: clamp(9px, 1.2vw, 12px);
+    font-weight: 300;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-top: 16px;
+    opacity: 0;
+    animation: fadeIn 1s ease 4s forwards;
+  }
+
+  /* Enter button area */
+  .enter-wrap {
+    margin-top: 56px;
+    opacity: 0;
+    animation: fadeInUp 1s cubic-bezier(0.16, 1, 0.3, 1) 4.2s forwards;
+  }
+
+  .enter-btn {
+    font-family: 'Noto Sans JP', sans-serif;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 64px;
+    color: var(--gold);
+    text-decoration: none;
+    letter-spacing: 0.35em;
+    font-size: 13px;
+    font-weight: 500;
+    border: none;
+    background: transparent;
+    overflow: hidden;
+    transition: color 0.4s ease;
+  }
+
+  .enter-btn::before {
+    content: '';
+    position: absolute; inset: 0;
+    border: 1px solid var(--gold-dim);
+    transition: border-color 0.4s ease;
+  }
+
+  .enter-btn::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: linear-gradient(135deg, var(--accent) 0%, rgba(62,96,78,0.6) 100%);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: -1;
+  }
+
+  .enter-btn:hover {
+    color: #fff;
+  }
+  .enter-btn:hover::before {
+    border-color: var(--accent-light);
+  }
+  .enter-btn:hover::after {
+    transform: scaleX(1);
+  }
+
+  .enter-btn .arrow {
+    display: inline-block;
+    width: 32px; height: 1px;
+    background: var(--gold);
+    position: relative;
+    transition: width 0.4s ease, background 0.4s ease;
+  }
+  .enter-btn .arrow::after {
+    content: '';
+    position: absolute; right: -1px; top: -3px;
+    width: 7px; height: 7px;
+    border-right: 1px solid var(--gold);
+    border-top: 1px solid var(--gold);
+    transform: rotate(45deg);
+    transition: border-color 0.4s ease;
+  }
+  .enter-btn:hover .arrow {
+    width: 48px;
+    background: #fff;
+  }
+  .enter-btn:hover .arrow::after {
+    border-color: #fff;
+  }
+
+  /* Bottom info bar */
+  .bottom-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    z-index: 20;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 28px;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--text-dim);
+    opacity: 0;
+    animation: fadeIn 1s ease 4.5s forwards;
+  }
+  .bottom-bar a {
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: color 0.3s;
+  }
+  .bottom-bar a:hover { color: var(--gold); }
+
+  /* Scanning line effect */
+  .scan-line {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 2px; z-index: 30;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    opacity: 0;
+    animation: scanDown 2.5s ease 2.8s forwards;
+    pointer-events: none;
+  }
+  @keyframes scanDown {
+    0% { top: 0; opacity: 0.6; }
+    100% { top: 100%; opacity: 0; }
+  }
+
+  /* DNA / helix decoration */
+  .helix-deco {
+    position: fixed;
+    right: 60px; top: 50%;
+    transform: translateY(-50%);
+    z-index: 8;
+    opacity: 0;
+    animation: fadeIn 1.5s ease 4s forwards;
+    pointer-events: none;
+  }
+
+  /* Keyframes library */
+  @keyframes charUp {
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes charReveal {
+    to { opacity: 1; transform: translateY(0) rotateX(0deg); }
+  }
+  @keyframes wordReveal {
+    to { opacity: 1; transform: translateY(0); filter: blur(0); }
+  }
+  @keyframes fadeIn {
+    to { opacity: 1; }
+  }
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Floating particles overlay */
+  .particle-overlay {
+    position: fixed; inset: 0; z-index: 6;
+    pointer-events: none;
+  }
+  .float-particle {
+    position: absolute;
+    width: 2px; height: 2px;
+    background: var(--gold);
+    border-radius: 50%;
+    opacity: 0;
+    animation: floatUp linear infinite;
+  }
+  @keyframes floatUp {
+    0% { opacity: 0; transform: translateY(0) scale(0.5); }
+    20% { opacity: 0.6; }
+    80% { opacity: 0.3; }
+    100% { opacity: 0; transform: translateY(-100vh) scale(1); }
+  }
+
+  /* Mouse trail circle */
+  .mouse-ring {
+    position: fixed; z-index: 15;
+    width: 28px; height: 28px;
+    border: 1px solid rgba(176, 154, 106, 0.4);
+    border-radius: 50%;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    transition: width 0.3s, height 0.3s, border-color 0.3s;
+  }
+  .mouse-ring.hover {
+    width: 56px; height: 56px;
+    border-color: rgba(176, 154, 106, 0.6);
+  }
+
+  /* Mobile adjustments */
+  @media (max-width: 768px) {
+    .side-deco, .helix-deco, .mouse-ring { display: none; }
+    .corner-mark { width: 24px; height: 24px; }
+    .enter-btn { padding: 14px 40px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Loading curtain -->
+<div class="curtain" id="curtain">
+  <div class="curtain-rings">
+    <div class="ring"></div>
+    <div class="ring"></div>
+    <div class="ring"></div>
+    <div class="ring"></div>
+    <div class="ring"></div>
+    <div class="dot"></div>
+  </div>
+</div>
+
+<!-- Scan line -->
+<div class="scan-line"></div>
+
+<!-- Background layers -->
+<div class="bg-radial"></div>
+<div class="bg-grain"></div>
+
+<!-- Canvas layers -->
+<canvas id="network"></canvas>
+<canvas id="rings"></canvas>
+
+<!-- Corner marks -->
+<div class="corner-mark tl"></div>
+<div class="corner-mark tr"></div>
+<div class="corner-mark bl"></div>
+<div class="corner-mark br"></div>
+
+<!-- Side decorations -->
+<div class="side-deco left">GREEN SPACE & ENVIRONMENTAL INFORMATICS</div>
+<div class="side-deco right">CHIBA UNIVERSITY — GRADUATE SCHOOL OF HORTICULTURE</div>
+
+<!-- Floating particles -->
+<div class="particle-overlay" id="particleOverlay"></div>
+
+<!-- Mouse ring -->
+<div class="mouse-ring" id="mouseRing"></div>
+
+<!-- Helix SVG decoration -->
+<svg class="helix-deco" width="30" height="300" viewBox="0 0 30 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M15 0 Q30 37.5 15 75 Q0 112.5 15 150 Q30 187.5 15 225 Q0 262.5 15 300" stroke="rgba(176,154,106,0.12)" stroke-width="0.5" fill="none">
+    <animate attributeName="d" dur="6s" repeatCount="indefinite"
+      values="M15 0 Q30 37.5 15 75 Q0 112.5 15 150 Q30 187.5 15 225 Q0 262.5 15 300;
+              M15 0 Q0 37.5 15 75 Q30 112.5 15 150 Q0 187.5 15 225 Q30 262.5 15 300;
+              M15 0 Q30 37.5 15 75 Q0 112.5 15 150 Q30 187.5 15 225 Q0 262.5 15 300"/>
+  </path>
+  <path d="M15 0 Q0 37.5 15 75 Q30 112.5 15 150 Q0 187.5 15 225 Q30 262.5 15 300" stroke="rgba(62,96,78,0.15)" stroke-width="0.5" fill="none">
+    <animate attributeName="d" dur="6s" repeatCount="indefinite"
+      values="M15 0 Q0 37.5 15 75 Q30 112.5 15 150 Q0 187.5 15 225 Q30 262.5 15 300;
+              M15 0 Q30 37.5 15 75 Q0 112.5 15 150 Q0 187.5 15 225 Q30 262.5 15 300;
+              M15 0 Q0 37.5 15 75 Q30 112.5 15 150 Q0 187.5 15 225 Q30 262.5 15 300"/>
+  </path>
+  <!-- nodes -->
+  <circle cx="15" cy="0" r="2" fill="rgba(176,154,106,0.2)"><animate attributeName="cy" values="0;300" dur="4s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.4;0;0.4" dur="4s" repeatCount="indefinite"/></circle>
+  <circle cx="15" cy="150" r="2" fill="rgba(62,96,78,0.3)"><animate attributeName="cy" values="150;300;150" dur="5s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.3;0;0.3" dur="5s" repeatCount="indefinite"/></circle>
+</svg>
+
+<!-- Main content -->
+<div class="content">
+  <div class="lab-affiliation" id="affiliation">千葉大学 大学院園芸学研究院・大学院園芸学研究科・園芸学部</div>
+  <h1 class="main-lab-name" id="labName">緑地環境情報学研究室</h1>
+  <p class="main-copy" id="mainCopy">微生物から樹木まで、森林・緑地のしくみを多階層で。</p>
+  <div class="sub-en">Decoding Forest Ecosystems: From Microbes to Trees</div>
+  <div class="enter-wrap">
+    <a href="index.html" class="enter-btn" id="enterBtn">
+      ENTER LABORATORY
+      <span class="arrow"></span>
+    </a>
+  </div>
+</div>
+
+<!-- Bottom bar -->
+<div class="bottom-bar">
+  <span>&copy; 2026 Green Space & Environmental Informatics Laboratory</span>
+  <span>千葉大学 大学院園芸学研究院・大学院園芸学研究科・園芸学部</span>
+</div>
+
+<script>
+/* =============================================
+   1. LOADING CURTAIN
+   ============================================= */
+const curtain = document.getElementById('curtain');
+setTimeout(() => curtain.classList.add('open'), 2400);
+
+/* =============================================
+   2. CHARACTER-LEVEL ANIMATIONS
+   ============================================= */
+function splitChars(el, baseDelay, increment) {
+  const text = el.textContent;
+  el.innerHTML = '';
+  [...text].forEach((ch, i) => {
+    const span = document.createElement('span');
+    span.className = 'char';
+    span.textContent = ch === ' ' ? '\u00A0' : ch;
+    span.style.animationDelay = `${baseDelay + i * increment}s`;
+    el.appendChild(span);
+  });
+}
+
+function splitWords(el, baseDelay, increment) {
+  const text = el.textContent;
+  const segments = text.split(/(?<=。|、|を|で|に|の|は|が|と|も|へ|から|まで|て|、)/);
+  el.innerHTML = '';
+  segments.forEach((seg, i) => {
+    if (!seg) return;
+    const span = document.createElement('span');
+    span.className = 'word';
+    span.textContent = seg;
+    span.style.animationDelay = `${baseDelay + i * increment}s`;
+    el.appendChild(span);
+  });
+}
+
+// Trigger text animations after curtain opens
+setTimeout(() => {
+  splitChars(document.getElementById('affiliation'), 2.8, 0.03);
+  splitChars(document.getElementById('labName'), 3.0, 0.06);
+  splitWords(document.getElementById('mainCopy'), 3.6, 0.18);
+}, 100);
+
+/* =============================================
+   3. NETWORK CANVAS — Mycorrhizal Network
+   ============================================= */
+const netCanvas = document.getElementById('network');
+const netCtx = netCanvas.getContext('2d');
+
+function resizeNet() {
+  netCanvas.width = window.innerWidth;
+  netCanvas.height = window.innerHeight;
+}
+resizeNet();
+window.addEventListener('resize', resizeNet);
+
+let mouseX = window.innerWidth / 2;
+let mouseY = window.innerHeight / 2;
+window.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+});
+
+class Node {
+  constructor() {
+    this.x = Math.random() * netCanvas.width;
+    this.y = Math.random() * netCanvas.height;
+    this.baseSize = Math.random() * 2.2 + 0.5;
+    this.size = this.baseSize;
+    this.vx = (Math.random() - 0.5) * 0.35;
+    this.vy = (Math.random() - 0.5) * 0.35;
+    this.pulse = Math.random() * Math.PI * 2;
+    this.pulseSpeed = Math.random() * 0.015 + 0.005;
+    this.type = Math.random() > 0.7 ? 'hub' : 'node'; // hub nodes are larger
+    if (this.type === 'hub') {
+      this.baseSize *= 2;
+      this.size = this.baseSize;
+    }
+  }
+  update() {
+    this.pulse += this.pulseSpeed;
+    this.size = this.baseSize + Math.sin(this.pulse) * 0.4;
+
+    // Mouse repulsion
+    const dx = this.x - mouseX;
+    const dy = this.y - mouseY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 180) {
+      const force = (180 - dist) / 180 * 0.6;
+      this.vx += (dx / dist) * force;
+      this.vy += (dy / dist) * force;
+    }
+
+    // Damping
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Wrap
+    if (this.x < -20) this.x = netCanvas.width + 20;
+    if (this.x > netCanvas.width + 20) this.x = -20;
+    if (this.y < -20) this.y = netCanvas.height + 20;
+    if (this.y > netCanvas.height + 20) this.y = -20;
+  }
+  draw() {
+    const alpha = this.type === 'hub' ? 0.5 : 0.3;
+    const color = this.type === 'hub' ? `rgba(176, 154, 106, ${alpha})` : `rgba(90, 138, 110, ${alpha * 0.7})`;
+    netCtx.fillStyle = color;
+    netCtx.beginPath();
+    netCtx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    netCtx.fill();
+
+    // Glow for hubs
+    if (this.type === 'hub') {
+      netCtx.fillStyle = `rgba(176, 154, 106, ${0.05 + Math.sin(this.pulse) * 0.03})`;
+      netCtx.beginPath();
+      netCtx.arc(this.x, this.y, this.size * 5, 0, Math.PI * 2);
+      netCtx.fill();
+    }
+  }
+}
+
+const connectionDist = 160;
+const nodes = [];
+const nodeCount = Math.min(90, Math.floor(window.innerWidth * window.innerHeight / 12000));
+for (let i = 0; i < nodeCount; i++) nodes.push(new Node());
+
+// Data packets traveling along edges
+class Packet {
+  constructor(a, b) {
+    this.a = a; this.b = b;
+    this.t = 0;
+    this.speed = Math.random() * 0.008 + 0.003;
+    this.alive = true;
+  }
+  update() {
+    this.t += this.speed;
+    if (this.t >= 1) this.alive = false;
+  }
+  draw() {
+    const x = this.a.x + (this.b.x - this.a.x) * this.t;
+    const y = this.a.y + (this.b.y - this.a.y) * this.t;
+    const alpha = Math.sin(this.t * Math.PI) * 0.8;
+    netCtx.fillStyle = `rgba(176, 154, 106, ${alpha})`;
+    netCtx.beginPath();
+    netCtx.arc(x, y, 1.5, 0, Math.PI * 2);
+    netCtx.fill();
+  }
+}
+
+let packets = [];
+let lastPacketTime = 0;
+
+function animateNetwork(time) {
+  netCtx.clearRect(0, 0, netCanvas.width, netCanvas.height);
+
+  // Draw connections
+  for (let i = 0; i < nodes.length; i++) {
+    nodes[i].update();
+    for (let j = i + 1; j < nodes.length; j++) {
+      const dx = nodes[i].x - nodes[j].x;
+      const dy = nodes[i].y - nodes[j].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < connectionDist) {
+        const alpha = (1 - dist / connectionDist) * 0.12;
+        netCtx.strokeStyle = `rgba(90, 138, 110, ${alpha})`;
+        netCtx.lineWidth = 0.5;
+        netCtx.beginPath();
+        netCtx.moveTo(nodes[i].x, nodes[i].y);
+        netCtx.lineTo(nodes[j].x, nodes[j].y);
+        netCtx.stroke();
+
+        // Spawn packets occasionally
+        if (time - lastPacketTime > 300 && Math.random() < 0.001 && packets.length < 20) {
+          packets.push(new Packet(nodes[i], nodes[j]));
+          lastPacketTime = time;
+        }
+      }
+    }
+    nodes[i].draw();
+  }
+
+  // Packets
+  packets = packets.filter(p => p.alive);
+  packets.forEach(p => { p.update(); p.draw(); });
+
+  requestAnimationFrame(animateNetwork);
+}
+requestAnimationFrame(animateNetwork);
+
+/* =============================================
+   4. CONCENTRIC RINGS CANVAS
+   ============================================= */
+const ringCanvas = document.getElementById('rings');
+const ringCtx = ringCanvas.getContext('2d');
+function resizeRings() {
+  ringCanvas.width = window.innerWidth;
+  ringCanvas.height = window.innerHeight;
+}
+resizeRings();
+window.addEventListener('resize', resizeRings);
+
+function animateRings(time) {
+  ringCtx.clearRect(0, 0, ringCanvas.width, ringCanvas.height);
+  const cx = ringCanvas.width / 2;
+  const cy = ringCanvas.height / 2;
+
+  for (let i = 0; i < 5; i++) {
+    const radius = 120 + i * 80 + Math.sin(time * 0.0005 + i) * 15;
+    const alpha = 0.025 - i * 0.004;
+    if (alpha <= 0) continue;
+
+    ringCtx.strokeStyle = `rgba(176, 154, 106, ${alpha})`;
+    ringCtx.lineWidth = 0.5;
+    ringCtx.setLineDash([2, 8 + i * 4]);
+    ringCtx.lineDashOffset = time * 0.015 * (i % 2 === 0 ? 1 : -1);
+    ringCtx.beginPath();
+    ringCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ringCtx.stroke();
+  }
+
+  ringCtx.setLineDash([]);
+  requestAnimationFrame(animateRings);
+}
+requestAnimationFrame(animateRings);
+
+/* =============================================
+   5. FLOATING CSS PARTICLES
+   ============================================= */
+const overlay = document.getElementById('particleOverlay');
+for (let i = 0; i < 20; i++) {
+  const p = document.createElement('div');
+  p.className = 'float-particle';
+  p.style.left = Math.random() * 100 + '%';
+  p.style.top = (Math.random() * 100 + 100) + '%';
+  p.style.animationDuration = (Math.random() * 10 + 12) + 's';
+  p.style.animationDelay = (Math.random() * 15) + 's';
+  p.style.width = p.style.height = (Math.random() * 2 + 1) + 'px';
+  overlay.appendChild(p);
+}
+
+/* =============================================
+   6. CUSTOM CURSOR RING
+   ============================================= */
+const ring = document.getElementById('mouseRing');
+let ringX = 0, ringY = 0;
+document.addEventListener('mousemove', (e) => {
+  ringX = e.clientX;
+  ringY = e.clientY;
+});
+function updateRing() {
+  ring.style.left = ringX + 'px';
+  ring.style.top = ringY + 'px';
+  requestAnimationFrame(updateRing);
+}
+updateRing();
+
+// Hover effect on button
+const enterBtn = document.getElementById('enterBtn');
+if (enterBtn) {
+  enterBtn.addEventListener('mouseenter', () => ring.classList.add('hover'));
+  enterBtn.addEventListener('mouseleave', () => ring.classList.remove('hover'));
+}
+
+/* =============================================
+   7. PAGE TRANSITION ON ENTER
+   ============================================= */
+enterBtn?.addEventListener('click', function(e) {
+  e.preventDefault();
+  const href = this.getAttribute('href');
+
+  // Create transition overlay
+  const trans = document.createElement('div');
+  trans.style.cssText = `
+    position: fixed; inset: 0; z-index: 9999;
+    background: var(--bg);
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform 0.7s cubic-bezier(0.7, 0, 0.3, 1);
+  `;
+  document.body.appendChild(trans);
+
+  requestAnimationFrame(() => {
+    trans.style.transform = 'scaleY(1)';
+    setTimeout(() => {
+      window.location.href = href;
+    }, 750);
+  });
+});
+</script>
+</body>
+</html>
